@@ -56,22 +56,16 @@ class ContactsNet(sonnet.AbstractModule):
                scalars,
                targets,
                network_2d_deep,
-               torsion_bins=None,
                skip_connect=0,
                position_specific_bias_size=0,
                filters_1d=(),
                collapsed_batch_norm=False,
-               is_ca_feature=False,
-               asa_multiplier=0.0,
-               secstruct_multiplier=0.0,
-               torsion_multiplier=0.0,
                name='contacts_net'):
     """Construct position prediction network."""
     super(ContactsNet, self).__init__(name=name)
 
     self._filters_1d = filters_1d
     self._collapsed_batch_norm = collapsed_batch_norm
-    self._is_ca_feature = is_ca_feature
     self._binary_code_bits = binary_code_bits
     self._data_format = data_format
     self._distance_multiplier = distance_multiplier
@@ -84,7 +78,6 @@ class ContactsNet(sonnet.AbstractModule):
     self._reshape_layer = reshape_layer
     self._resolution_noise_scale = resolution_noise_scale
     self._scalars = scalars
-    self._torsion_bins = torsion_bins
     self._skip_connect = skip_connect
     self._targets = targets
     self._network_2d_deep = network_2d_deep
@@ -94,10 +87,6 @@ class ContactsNet(sonnet.AbstractModule):
     self.torsion_multiplier = torsion_multiplier
 
     with self._enter_variable_scope():
-      if self.secstruct_multiplier > 0:
-        self._secstruct = secstruct.Secstruct()
-      if self.asa_multiplier > 0:
-        self._asa = asa_output.ASAOutputLayer()
       if self._position_specific_bias_size:
         self._position_specific_bias = tf.get_variable(
             'position_specific_bias',
@@ -129,12 +118,6 @@ class ContactsNet(sonnet.AbstractModule):
     """
     crop_placeholder = placeholders['crop_placeholder']
     inputs_1d = placeholders['inputs_1d_placeholder']
-    if self._is_ca_feature and 'aatype' in self._features:
-      logging.info('Collapsing aatype to is_ca_feature %s',
-                   inputs_1d.shape.as_list()[-1])
-      assert inputs_1d.shape.as_list()[-1] <= 21 + (
-          1 if 'seq_length' in self._features else 0)
-      inputs_1d = inputs_1d[:, :, 7:8]
     logits = self.compute_outputs(
         inputs_1d=inputs_1d,
         residue_index=placeholders['residue_index_placeholder'],
@@ -172,51 +155,6 @@ class ContactsNet(sonnet.AbstractModule):
         data_format=data_format)
     logits = tf.debugging.check_numerics(
         logits, 'NaN in resnet activations', name='resnet_activations')
-    if (self.secstruct_multiplier > 0 or
-        self.asa_multiplier > 0 or
-        self.torsion_multiplier > 0):
-      # Make a 1d embedding by reducing the 2D activations.
-      # We do this in the x direction and the y direction separately.
-
-      collapse_dim = 1
-      join_dim = -1
-      embedding_1d = tf.concat(
-          # First targets are crop_x (axis 2) which we must reduce on axis 1
-          [tf.concat([tf.reduce_max(activations, axis=collapse_dim),
-                      tf.reduce_mean(activations, axis=collapse_dim)],
-                     axis=join_dim),
-           # Next targets are crop_y (axis 1) which we must reduce on axis 2
-           tf.concat([tf.reduce_max(activations, axis=collapse_dim+1),
-                      tf.reduce_mean(activations, axis=collapse_dim+1)],
-                     axis=join_dim)],
-          axis=collapse_dim)  # Join the two crops together.
-      if self._collapsed_batch_norm:
-        embedding_1d = tf.contrib.layers.batch_norm(
-            embedding_1d, is_training=use_on_the_fly_stats,
-            fused=True, decay=0.999, scope='collapsed_batch_norm',
-            data_format='NHWC')
-      for i, nfil in enumerate(self._filters_1d):
-        embedding_1d = tf.contrib.layers.fully_connected(
-            embedding_1d,
-            num_outputs=nfil,
-            normalizer_fn=(
-                tf.contrib.layers.batch_norm if self._collapsed_batch_norm
-                else None),
-            normalizer_params={'is_training': use_on_the_fly_stats,
-                               'updates_collections': None},
-            scope='collapsed_embed_%d' % i)
-
-      if self.torsion_multiplier > 0:
-        self.torsion_logits = tf.contrib.layers.fully_connected(
-            embedding_1d,
-            num_outputs=self._torsion_bins * self._torsion_bins,
-            activation_fn=None,
-            scope='torsion_logits')
-        self.torsion_output = tf.nn.softmax(self.torsion_logits)
-      if self.secstruct_multiplier > 0:
-        self._secstruct.make_layer_new(embedding_1d)
-      if self.asa_multiplier > 0:
-        self.asa_logits = self._asa.compute_asa_output(embedding_1d)
     return logits
 
   @staticmethod
@@ -428,15 +366,6 @@ class ContactsNet(sonnet.AbstractModule):
 
     # Will be NHWC.
     return contact_logits
-
-  def update_crop_fetches(self, fetches):
-    """Add auxiliary outputs for a crop to the fetches."""
-    if self.secstruct_multiplier > 0:
-      fetches['secstruct_probs'] = self._secstruct.get_q8_probs()
-    if self.asa_multiplier > 0:
-      fetches['asa_output'] = self._asa.asa_output
-    if self.torsion_multiplier > 0:
-      fetches['torsion_probs'] = self.torsion_output
 
 
 def build_crops_biases(bias_size, raw_biases, crop_x, crop_y, back_prop):

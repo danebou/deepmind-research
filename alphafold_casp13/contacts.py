@@ -29,7 +29,6 @@ import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 from alphafold_casp13 import config_dict
 from alphafold_casp13 import contacts_experiment
 from alphafold_casp13 import distogram_io
-from alphafold_casp13 import secstruct
 
 flags.DEFINE_string('config_path', None, 'Path of the JSON config file.')
 flags.DEFINE_string('checkpoint_path', None, 'Checkpoint path for evaluation.')
@@ -52,9 +51,6 @@ Prediction = collections.namedtuple(
         'sequence',  # The amino acid sequence.
         'filebase',  # The chain name. All output files will use this name.
         'softmax_probs',  # Softmax of the distogram.
-        'ss',  # Secondary structure prediction.
-        'asa',  # ASA prediction.
-        'torsions',  # Torsion prediction.
     ])
 
 
@@ -130,9 +126,6 @@ def _run_evaluation(
     sequence = one_prediction.sequence
     filebase = one_prediction.filebase
     softmax_probs = one_prediction.softmax_probs
-    ss = one_prediction.ss
-    asa = one_prediction.asa
-    torsions = one_prediction.torsions
 
     num_examples += 1
     num_crops += num_crops_local
@@ -143,22 +136,6 @@ def _run_evaluation(
     distogram_io.save_distance_histogram(
         filename, softmax_probs, filebase, sequence,
         min_range=min_range, max_range=max_range, num_bins=num_bins)
-
-    if experiment.model.torsion_multiplier > 0:
-      torsions_dir = os.path.join(output_dir, 'torsions')
-      tf.io.gfile.makedirs(torsions_dir)
-      distogram_io.save_torsions(torsions_dir, filebase, sequence, torsions)
-
-    if experiment.model.secstruct_multiplier > 0:
-      ss_dir = os.path.join(output_dir, 'secstruct')
-      tf.io.gfile.makedirs(ss_dir)
-      secstruct.save_secstructs(ss_dir, filebase, None, sequence, ss)
-
-    if experiment.model.asa_multiplier > 0:
-      asa_dir = os.path.join(output_dir, 'asa')
-      tf.io.gfile.makedirs(asa_dir)
-      secstruct.save_secstructs(asa_dir, filebase, None, sequence,
-                                np.expand_dims(asa, 1), label='Deepmind 2D ASA')
 
     time_spent = time.time() - start_all_time
     logging.info(
@@ -178,8 +155,6 @@ def compute_one_prediction(
   start = time.time()
   output_fetches = {'probs': experiment.eval_probs}
   output_fetches['softmax_probs'] = experiment.eval_probs_softmax
-  # Add the auxiliary outputs if present.
-  experiment.model.update_crop_fetches(output_fetches)
   # Get data.
   batch = experiment.get_one_example(sess)
   length = batch['sequence_lengths'][0]
@@ -243,19 +218,6 @@ def compute_one_prediction(
           patch['softmax'] * np.expand_dims(patch['weight'], 2))
       weights_1d_accum[jc:jc_to] += 1
       weights_1d_accum[ic:ic_to] += 1
-      if 'asa_x' in patch:
-        asa_accum[ic:ic + patch['asa_x'].shape[0]] += np.squeeze(
-            patch['asa_x'], axis=1)
-        asa_accum[jc:jc + patch['asa_y'].shape[0]] += np.squeeze(
-            patch['asa_y'], axis=1)
-      if 'ss_x' in patch:
-        ss_accum[ic:ic + patch['ss_x'].shape[0]] += patch['ss_x']
-        ss_accum[jc:jc + patch['ss_y'].shape[0]] += patch['ss_y']
-      if 'torsions_x' in patch:
-        torsions_accum[
-            ic:ic + patch['torsions_x'].shape[0]] += patch['torsions_x']
-        torsions_accum[
-            jc:jc + patch['torsions_y'].shape[0]] += patch['torsions_y']
       num_crops_local += 1
   single_message = (
       'Constructed %s len %d from %d chunks [%d, %d x %d, %d] '
@@ -353,21 +315,6 @@ def compute_one_patch(sess, experiment, output_fetches, inputs_1d,
     patch['softmax'] = output_results['softmax_probs'][
         0, prepad_y:crop_size_y - postpad_y,
         prepad_x:crop_size_x - postpad_x]
-  if 'secstruct_probs' in output_results:
-    patch['ss_x'] = output_results['secstruct_probs'][
-        0, prepad_x:crop_size_x - postpad_x]
-    patch['ss_y'] = output_results['secstruct_probs'][
-        0, crop_size_x + prepad_y:crop_size_x + crop_size_y - postpad_y]
-  if 'torsion_probs' in output_results:
-    patch['torsions_x'] = output_results['torsion_probs'][
-        0, prepad_x:crop_size_x - postpad_x]
-    patch['torsions_y'] = output_results['torsion_probs'][
-        0, crop_size_x + prepad_y:crop_size_x + crop_size_y - postpad_y]
-  if 'asa_output' in output_results:
-    patch['asa_x'] = output_results['asa_output'][
-        0, prepad_x:crop_size_x - postpad_x]
-    patch['asa_y'] = output_results['asa_output'][
-        0, crop_size_x + prepad_y:crop_size_x + crop_size_y - postpad_y]
   return patch
 
 

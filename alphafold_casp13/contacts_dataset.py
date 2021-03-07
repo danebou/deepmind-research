@@ -305,7 +305,7 @@ def convert_to_legacy_proteins_dataset_format(
           raise ValueError(
               'The 2D feature %s is not in the features dictionary and neither '
               'are its cropped and diagonal versions.' % key)
-        else:
+        else: 
           tensors_2d.append(
               tf.cast(features[key + '_cropped'], dtype=tf.float32))
           tensors_2d_diagonal.append(

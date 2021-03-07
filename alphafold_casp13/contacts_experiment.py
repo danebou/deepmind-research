@@ -50,13 +50,6 @@ class Contacts(object):
     self._targets = network_config.targets
     # Add extra targets we need.
     required_targets = ['domain_name', 'resolution', 'chain_name']
-    if self.model.torsion_multiplier > 0:
-      required_targets.extend([
-          'phi_angles', 'phi_mask', 'psi_angles', 'psi_mask'])
-    if self.model.secstruct_multiplier > 0:
-      required_targets.extend(['sec_structure', 'sec_structure_mask'])
-    if self.model.asa_multiplier > 0:
-      required_targets.extend(['solv_surf', 'solv_surf_mask'])
     extra_targets = [t for t in required_targets if t not in self._targets]
     if extra_targets:
       targets = list(self._targets)
@@ -132,31 +125,6 @@ class Contacts(object):
       self.cb_mask_placeholder = _float_ph(shape=[None, None], name='cb_mask')
       self.lengths_placeholder = _int_ph(shape=[None], name='lengths')
 
-      if self.model.secstruct_multiplier > 0:
-        self.sec_structure_placeholder = _float_ph(
-            shape=[None, None, 8], name='sec_structure')
-        self.sec_structure_logits_placeholder = _float_ph(
-            shape=[None, None, 8], name='sec_structure_logits')
-        self.sec_structure_mask_placeholder = _float_ph(
-            shape=[None, None, 1], name='sec_structure_mask')
-
-      if self.model.asa_multiplier > 0:
-        self.solv_surf_placeholder = _float_ph(
-            shape=[None, None, 1], name='solv_surf')
-        self.solv_surf_logits_placeholder = _float_ph(
-            shape=[None, None, 1], name='solv_surf_logits')
-        self.solv_surf_mask_placeholder = _float_ph(
-            shape=[None, None, 1], name='solv_surf_mask')
-
-      if self.model.torsion_multiplier > 0:
-        self.torsions_truth_placeholder = _float_ph(
-            shape=[None, None, 2], name='torsions_truth')
-        self.torsions_mask_placeholder = _float_ph(
-            shape=[None, None, 1], name='torsions_mask')
-        self.torsion_logits_placeholder = _float_ph(
-            shape=[None, None, self.network_config.torsion_bins ** 2],
-            name='torsion_logits')
-
       # Build a dict to pass all the placeholders into build.
       placeholders = {
           'inputs_1d_placeholder': self.inputs_1d_placeholder,
@@ -169,22 +137,6 @@ class Contacts(object):
           'cb_mask_placeholder': self.cb_mask_placeholder,
           'lengths_placeholder': self.lengths_placeholder,
       }
-      if self.model.secstruct_multiplier > 0:
-        placeholders.update({
-            'sec_structure': self.sec_structure_placeholder,
-            'sec_structure_logits_placeholder':
-            self.sec_structure_logits_placeholder,
-            'sec_structure_mask': self.sec_structure_mask_placeholder,})
-      if self.model.asa_multiplier > 0:
-        placeholders.update({
-            'solv_surf': self.solv_surf_placeholder,
-            'solv_surf_logits_placeholder': self.solv_surf_logits_placeholder,
-            'solv_surf_mask': self.solv_surf_mask_placeholder,})
-      if self.model.torsion_multiplier > 0:
-        placeholders.update({
-            'torsions_truth': self.torsions_truth_placeholder,
-            'torsion_logits_placeholder': self.torsion_logits_placeholder,
-            'torsions_truth_mask': self.torsions_mask_placeholder,})
 
       activations = self._model(
           crop_size_x=self.crop_size_x,
@@ -211,23 +163,5 @@ class Contacts(object):
     if hasattr(self._input_batch.targets, 'residue_index'):
       request_dict.update(
           {'residue_index': self._input_batch.targets.residue_index})
-    if hasattr(self._input_batch.targets, 'phi_angles'):
-      request_dict.update(
-          {'phi_angles': self._input_batch.targets.phi_angles,
-           'psi_angles': self._input_batch.targets.psi_angles,
-           'phi_mask': self._input_batch.targets.phi_mask,
-           'psi_mask': self._input_batch.targets.psi_mask})
-    if hasattr(self._input_batch.targets, 'sec_structure'):
-      request_dict.update(
-          {'sec_structure': self._input_batch.targets.sec_structure,
-           'sec_structure_mask': self._input_batch.targets.sec_structure_mask,})
-    if hasattr(self._input_batch.targets, 'solv_surf'):
-      request_dict.update(
-          {'solv_surf': self._input_batch.targets.solv_surf,
-           'solv_surf_mask': self._input_batch.targets.solv_surf_mask,})
-    if hasattr(self._input_batch.targets, 'alpha_positions'):
-      request_dict.update(
-          {'alpha_positions': self._input_batch.targets.alpha_positions,
-           'alpha_mask': self._input_batch.targets.alpha_mask,})
     batch = sess.run(request_dict)
     return batch
