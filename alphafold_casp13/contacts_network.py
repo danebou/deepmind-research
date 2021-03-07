@@ -179,7 +179,7 @@ class ContactsNet(sonnet.AbstractModule):
               [[tf.maximum(0, -c[0]),
                 tf.maximum(0, crop_size_y -(n - c[0]))]])),
           elems=(residue_index, crop_y), dtype=tf.int32,
-          back_prop=False)
+          back_prop=False) 
       hidden_1d_cropped_x = tf.map_fn(
           call_on_tuple(lambda c, h: tf.pad(
               h[tf.maximum(0, c[0]):c[1]],
