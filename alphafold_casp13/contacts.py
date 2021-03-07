@@ -177,9 +177,6 @@ def compute_one_prediction(
   num_examples += batch_size
   # Crops.
   prob_accum = np.zeros((length, length, 2))
-  ss_accum = np.zeros((length, 8))
-  torsions_accum = np.zeros((length, torsion_bins**2))
-  asa_accum = np.zeros((length,))
   weights_1d_accum = np.zeros((length,))
   softmax_prob_accum = np.zeros((length, length, num_bins), dtype=np.float32)
 
@@ -231,10 +228,6 @@ def compute_one_prediction(
   probs = prob_accum[:, :, 0] / prob_accum[:, :, 1]
   softmax_probs = softmax_prob_accum[:, :, :] / prob_accum[:, :, 1:2]
 
-  asa_accum /= weights_1d_accum
-  ss_accum /= np.expand_dims(weights_1d_accum, 1)
-  torsions_accum /= np.expand_dims(weights_1d_accum, 1)
-
   # The probs are symmetrical.
   probs = (probs + probs.transpose()) / 2
   if num_bins > 1:
@@ -245,10 +238,7 @@ def compute_one_prediction(
       num_crops_local=num_crops_local,
       sequence=sequence,
       filebase=filebase,
-      softmax_probs=softmax_probs,
-      ss=ss_accum,
-      asa=asa_accum,
-      torsions=torsions_accum)
+      softmax_probs=softmax_probs)
 
 
 def compute_one_patch(sess, experiment, output_fetches, inputs_1d,
